@@ -1,0 +1,4 @@
+spacy
+tqdm
+git+git://github.com/zhijing-jin/efficiency.git
+torchtext

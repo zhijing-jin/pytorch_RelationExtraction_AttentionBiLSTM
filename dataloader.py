@@ -1,115 +1,112 @@
+import json
 import torch
-from tqdm import tqdm
-from torchtext.data import Field, TabularDataset, Iterator, BucketIterator
-from efficiency.log import show_time, show_var
+import torchtext
+
+from torchtext.data import Field, RawField, TabularDataset, \
+    BucketIterator, Iterator
+from torchtext.vocab import Vectors, GloVe
+from efficiency.log import show_time, fwrite
 
 
 class Dataset:
-    def __init__(self, data_dir='data/', train_fname='train.csv',
-                 time_log=True, vocab_min_freq=2, preprocessed=False):
-        if time_log: show_time("[Info] Start data loading from {}{}".format(data_dir, train_fname))
+    def __init__(self, proc_id=0, data_dir='tmp/', train_fname='train.csv',
+                 preprocessed=True, lower=True,
+                 vocab_max_size=100000, emb_dim=100,
+                 save_vocab_fname='vocab.json', verbose=True, ):
+        self.verbose = verbose and (proc_id == 0)
+        tokenize = lambda x: x.split() if preprocessed else 'spacy'
 
-        self.time_log = time_log
-
-        tokenize = (lambda x: x.split()) if preprocessed else "spacy"
-
-        TEXT = Field(sequential=True, batch_first=True, tokenize=tokenize,
-                     lower=True)
-        LABEL = Field(sequential=False, dtype=torch.float, batch_first=True,
-                      use_vocab=False)
+        INPUT = Field(sequential=True, batch_first=True, tokenize=tokenize,
+                      lower=lower,
+                      # include_lengths=True,
+                      )
+        TGT = Field(sequential=False, dtype=torch.long, batch_first=True,
+                    use_vocab=False)
+        SHOW_INP = RawField()
         fields = [
-            ("id", None),
-            ("target", LABEL),
-            ("comment_text", TEXT),
-        ]
-        train_ds, valid_ds = TabularDataset.splits(
+            ('tgt', TGT),
+            ('input', INPUT),
+            ('show_inp', SHOW_INP), ]
+
+        if self.verbose:
+            show_time("[Info] Start building TabularDataset from: {}{}"
+                      .format(data_dir, 'train.csv'))
+        train_ds, valid_ds, test_ds = TabularDataset.splits(
+            fields=fields,
             path=data_dir,
+            format=train_fname.rsplit('.')[-1],
             train=train_fname,
-            validation=train_fname.replace("train", "valid"),
-            format='csv',
+            validation=train_fname.replace('train', 'valid'),
+            test=train_fname.replace('train', 'test'),
             skip_header=True,
-            fields=fields
         )
-        fields_tst = [
-            ("id", None),
-            ("comment_text", TEXT),
-        ]
-        test_ds = TabularDataset(
-            path=data_dir + train_fname.replace("train", "test"),
-            format='csv',
-            skip_header=True,
-            fields=fields_tst
-        )
+        INPUT.build_vocab(train_ds, max_size=vocab_max_size,
+                          vectors=GloVe(name='6B', dim=emb_dim),
+                          unk_init=torch.Tensor.normal_, )
+        # emb_dim = {50, 100}
+        # "glove.6B.{}d".format(emb_dim)
 
-        if time_log: show_time("[Info] Finished data loading")
-
-        TEXT.build_vocab(train_ds, min_freq=vocab_min_freq)
-
-        import pdb;
-        pdb.set_trace()
-        TEXT.vocab.freqs.most_common(10)
-        train_ds[0].__dict__.keys()
-        train_ds[0].comment_text[:3]
-        # show_var(["train_ds[0]"])
-
+        self.INPUT = INPUT
         self.train_ds = train_ds
         self.valid_ds = valid_ds
         self.test_ds = test_ds
-        self.input_vocab_size = len(TEXT.vocab)
 
-    def get_dataloader(self, batch_size=64, device=torch.device('cpu')):
+        if save_vocab_fname and self.verbose:
+            writeout = {
+                'input_vocab': {
+                    'itos': INPUT.vocab.itos,
+                    'stoi': INPUT.vocab.stoi,
+                },
+            }
+            fwrite(json.dumps(writeout, indent=4), save_vocab_fname)
 
-        if self.time_log: show_time("[Info] Start making iterators")
+        if self.verbose:
+            msg = "[Info] Finished building vocab: {} INPUT" \
+                .format(len(self.INPUT.vocab))
+            show_time(msg)
+
+    def get_dataloader(self, proc_id=0, n_gpus=1, device=torch.device('cpu'),
+                       batch_size=64):
+        def _distribute_dataset(dataset):
+            n = len(dataset)
+            part = dataset[n * proc_id // n_gpus: n * (proc_id + 1) // n_gpus]
+            return torchtext.data.Dataset(part, dataset.fields)
+
+        train_ds = _distribute_dataset(self.train_ds)
+        self.verbose = self.verbose and (proc_id == 0)
         train_iter, valid_iter = BucketIterator.splits(
-            (self.train_ds, self.valid_ds),
+            (train_ds, self.valid_ds),
             batch_sizes=(batch_size, batch_size),
+            sort_within_batch=True,
+            sort_key=lambda x: len(x.input),
             device=device,
-            sort_key=lambda x: len(x.comment_text),
-            sort_within_batch=False,
-            repeat=False
+            repeat=False,
         )
-
-        batch = next(train_iter.__iter__())
-        # import pdb;
-        # pdb.set_trace()
-        batch.__dict__.keys()
 
         test_iter = Iterator(
             self.test_ds,
-            batch_size=batch_size,
+            batch_size=1,
             sort=False,
+            sort_within_batch=False,
             device=device,
             repeat=False,
-            sort_within_batch=False
         )
-
         train_dl = BatchWrapper(train_iter)
         valid_dl = BatchWrapper(valid_iter)
         test_dl = BatchWrapper(test_iter)
-
-        next(train_dl.__iter__())
-        if self.time_log: show_time("[Info] Finished making iterators")
-
         return train_dl, valid_dl, test_dl
 
 
 class BatchWrapper:
-    def __init__(self, dataloader):
-        self.dataloader = dataloader
-
-    def __iter__(self):
-        for batch in self.dataloader:
-            batch_dic = {
-                'inp': getattr(batch, 'comment_text'),
-                'tgt': getattr(batch, 'target') if hasattr(batch, 'target') else None,
-            }
-            s = Struct(**batch_dic)
-            # import pdb; pdb.set_trace()
-
-            yield s
+    def __init__(self, iterator):
+        self.iterator = iterator
 
     def __len__(self):
-        return len(self.dataloader)
+        return len(self.iterator)
+
+    def __iter__(self):
+        for batch in self.iterator:
+            yield batch
 
 
 class Struct:
@@ -117,16 +114,14 @@ class Struct:
         self.__dict__.update(entries)
 
 
-def main():
-    file_dir = "data/train.csv"
-    dataset = Dataset(file_dir)
+if __name__ == '__main__':
+    from tqdm import tqdm
+
+    file_dir = "~/proj/1908_prac_toxic/data/yelp/"
+    dataset = Dataset(data_dir=file_dir)
     train_dl, valid_dl, test_dl = dataset.get_dataloader()
+    show_time('[Info] Begin iterating 10 epochs')
     for epoch in range(10):
         for batch in tqdm(train_dl):
-            import pdb;
-            pdb.set_trace()
-            print(batch)
-
-
-if __name__ == "__main__":
-    main()
+            pass
+    show_time('[Info] Finished loading')

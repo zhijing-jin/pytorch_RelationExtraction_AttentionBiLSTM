@@ -1,4 +1,5 @@
-spacy
-tqdm
+configargparse
 git+git://github.com/zhijing-jin/efficiency.git
 torchtext
+torch==1.1
+

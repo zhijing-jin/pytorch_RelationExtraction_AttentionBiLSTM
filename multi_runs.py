@@ -50,15 +50,16 @@ def get_args():
                         help='start ix of test batches')
     parser.add_argument('-end_ix', default=None, type=int,
                         help='end ix of test batch')
+    parser.add_argument('-inspect_result', default=False, action='store_true', help='whether to inspect the results of grid search')
+
     args = parser.parse_args()
     return args
 
 def main():
-    # get_results() # 226
+    args = get_args()
+    if args.inspect_result: get_results(); return
 
     combinations = get_combinations()  # 1296
-
-    args = get_args()
     combination_set = combinations[args.start_ix:args.end_ix]
 
     for parameter_set in combination_set:

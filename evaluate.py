@@ -2,8 +2,7 @@ from __future__ import division, print_function
 import os
 import json
 import torch
-from efficiency.log import fwrite, show_var
-from efficiency.function import shell
+from utils import fwrite, show_var, shell
 
 from model import LSTMClassifier
 

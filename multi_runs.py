@@ -1,6 +1,6 @@
 import os
 from itertools import product
-from efficiency.log import show_time
+from utils import show_time
 
 
 def get_combinations():

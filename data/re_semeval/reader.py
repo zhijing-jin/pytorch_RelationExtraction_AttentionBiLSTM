@@ -1,11 +1,11 @@
 import os
-import re
+import sys
 import json
 import random
 
-from efficiency.log import fwrite
-from efficiency.function import shell
-from efficiency.nlp import NLP
+sys.path.append(os.path.abspath('.'))
+
+from utils import fwrite, shell, NLP
 
 
 def load_data(path):

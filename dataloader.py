@@ -5,7 +5,7 @@ import torchtext
 from torchtext.data import Field, RawField, TabularDataset, \
     BucketIterator, Iterator
 from torchtext.vocab import Vectors, GloVe
-from efficiency.log import show_time, fwrite
+from utils import show_time, fwrite
 
 
 class Dataset:

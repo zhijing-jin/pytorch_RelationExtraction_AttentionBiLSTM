@@ -5,8 +5,7 @@ import torch
 import numpy as np
 import random
 import configargparse
-from efficiency.log import show_time, fwrite
-from efficiency.function import shell
+from utils import show_time, fwrite, shell
 
 
 def get_args():

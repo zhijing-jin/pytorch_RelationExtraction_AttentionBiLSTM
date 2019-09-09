@@ -2,8 +2,7 @@ from __future__ import division, print_function
 from tqdm import tqdm
 import torch
 
-from efficiency.log import fwrite
-from efficiency.function import shell
+from utils import shell
 
 from get_args import setup, dynamic_setup, model_setup, clean_up
 from dataloader import Dataset

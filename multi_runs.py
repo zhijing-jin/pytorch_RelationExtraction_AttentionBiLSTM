@@ -50,7 +50,8 @@ def get_args():
                         help='start ix of test batches')
     parser.add_argument('-end_ix', default=None, type=int,
                         help='end ix of test batch')
-
+    args = parser.parse_args()
+    return args
 
 def main():
     # get_results() # 226

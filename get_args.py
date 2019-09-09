@@ -143,8 +143,9 @@ def model_setup(proc_id, model, args):
 
 
 def clean_up(args):
-    cmd = 'cp -a {} {}'.format(args.save_dir, args.save_dir_cp)
-    shell(cmd)
+    if args.save_dir == 'tmp/':
+        cmd = 'cp -a {} {}'.format(args.save_dir, args.save_dir_cp)
+        shell(cmd)
 
 
 def select_data(save_dir='./tmp', data_dir='./data/wiki_person',

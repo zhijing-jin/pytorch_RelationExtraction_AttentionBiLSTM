@@ -1,4 +1,5 @@
 import os
+import configargparse
 from itertools import product
 from utils import show_time
 
@@ -43,14 +44,23 @@ def get_results():
     pdb.set_trace()
 
 
+def get_args():
+    parser = configargparse.ArgumentParser('Options for multi-run')
+    parser.add_argument('-start_ix', default=-50, type=int,
+                        help='start ix of test batches')
+    parser.add_argument('-end_ix', default=None, type=int,
+                        help='end ix of test batch')
+
+
 def main():
-    get_results() # 226
+    # get_results() # 226
 
-    combinations = get_combinations() # 1296
-    import pdb;
-    pdb.set_trace()
+    combinations = get_combinations()  # 1296
 
-    for parameter_set in combinations:
+    args = get_args()
+    combination_set = combinations[args.start_ix:args.end_ix]
+
+    for parameter_set in combination_set:
         uid = show_time()
         cmd = 'python train.py -save_dir {save_dir} ' \
               '-emb_dropout {} ' \

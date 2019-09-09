@@ -124,6 +124,7 @@ class LSTMClassifier(nn.Module):
         #     o, hidden = self.lstm(cur_emb) if i == 0 else self.lstm(cur_emb, hidden)
         #     import pdb;pdb.set_trace()
         #     outputs += [o.unsqueeze(0)]
+        #
         # outputs = torch.cat(outputs, dim=0)
 
         lstm_output = self.lstm_dropout(lstm_output)

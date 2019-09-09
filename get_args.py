@@ -41,7 +41,7 @@ def get_args():
     group.add_argument('-epochs', default=100, type=int,
                        help='number of epochs to train the model')
     group.add_argument('-lr', default=0.001, type=float, help='learning rate')
-    group.add_argument('-weight_decay', default=0.001, type=float,
+    group.add_argument('-weight_decay', default=1e-5, type=float,
                        help='weight decay')
 
     group = parser.add_argument_group('Files')

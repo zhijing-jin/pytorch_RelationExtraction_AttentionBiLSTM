@@ -17,7 +17,7 @@ class Dataset:
         tokenize = lambda x: x.split() if preprocessed else 'spacy'
 
         INPUT = Field(sequential=True, batch_first=True, tokenize=tokenize,
-                      # lower=lower,
+                      lower=lower,
                       # include_lengths=True,
                       )
         # TGT = Field(sequential=False, dtype=torch.long, batch_first=True,

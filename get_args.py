@@ -14,25 +14,32 @@ def get_args():
     parser = configargparse.ArgumentParser(
         description='Args for Text Classification')
     group = parser.add_argument_group('Model Hyperparameters')
-    group.add_argument('-lstm_n_layer', default=2, type=int,
-                       help='num of layers in LSTM')
-    group.add_argument('-lstm_dropout', default=0.1, type=float,
-                       help='dropout in >=1th LSTM layer')
-    group.add_argument('-lstm_dim', default=256, type=int,
-                       help='dimension of the lstm hidden states')
-    group.add_argument('-vocab_max_size', default=100000, type=int,
-                       help='max number of words in vocab')
-    group.add_argument('-n_linear', default=2, type=int,
-                       help='number of linear layers after lstm')
-    group.add_argument('-n_classes', default=2, type=int,
-                       help='number of classes to predict')
+    group.add_argument('-emb_dropout', default=0.3, type=float,
+                       help='dropout of the embedding layer')
     group.add_argument('-emb_dim', default=100, type=int,
                        help='dimension of embedding vectors')
+    group.add_argument('-vocab_max_size', default=100000, type=int,
+                       help='max number of words in vocab')
+    group.add_argument('-lstm_n_layer', default=1, type=int,
+                       help='num of layers in LSTM')
+    group.add_argument('-lstm_dropout', default=0.3, type=float,
+                       help='dropout in >=1th LSTM layer')
+    group.add_argument('-lstm_dim', default=100, type=int,
+                       help='dimension of the lstm hidden states')
+    group.add_argument('-lstm_combine', default='add',
+                       choices=['add', 'concat'], type=str,
+                       help='the way to combine bidirectional lstm outputs')
+    group.add_argument('-n_linear', default=1, type=int,
+                       help='number of linear layers after lstm')
+    group.add_argument('-linear_dropout', default=0.5, type=float,
+                       help='dropout of the penultimate layer')
+    group.add_argument('-n_classes', default=2, type=int,
+                       help='number of classes to predict')
 
     group = parser.add_argument_group('Training Specs')
     group.add_argument('-seed', default=0, type=int, help='random seed')
-    group.add_argument('-batch_size', default=64, type=int, help='batch size')
-    group.add_argument('-epochs', default=20, type=int,
+    group.add_argument('-batch_size', default=10, type=int, help='batch size')
+    group.add_argument('-epochs', default=100, type=int,
                        help='number of epochs to train the model')
     group.add_argument('-lr', default=0.001, type=float, help='learning rate')
     group.add_argument('-decay', default=0.001, type=float, help='weight decay')
@@ -85,7 +92,7 @@ def setup():
 
     if not os.path.isdir(args.save_dir):
         os.mkdir(args.save_dir)
-    else:
+    elif not args.load_model:
         shell('rm {}/*'.format(args.save_dir))
     args.save_meta_fname = os.path.join(args.save_dir, args.save_meta_fname)
     args.save_log_fname = os.path.join(args.save_dir, args.save_log_fname)
@@ -104,11 +111,7 @@ def setup():
     return args
 
 
-def dynamic_setup(proc_id, args, dataset, model):
-    def _count_parameters(model):
-        return sum(
-            p.numel() for p in model.parameters() if p.requires_grad)
-
+def dynamic_setup(args, dataset):
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
@@ -116,6 +119,15 @@ def dynamic_setup(proc_id, args, dataset, model):
 
     vocab = dataset.INPUT.vocab
     args.vocab_size = len(vocab)
+    args.n_classes = len(dataset.TGT.vocab)
+    return args
+
+
+def model_setup(proc_id, model, args):
+    def _count_parameters(model):
+        return sum(
+            p.numel() for p in model.parameters() if p.requires_grad)
+
     args.n_params = _count_parameters(model)
 
     if proc_id == 0:

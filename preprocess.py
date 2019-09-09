@@ -1,47 +1,59 @@
 import os
-from efficiency.function import shell
+import csv
+import json
+import configargparse
 
 
-def preproc(file):
-    import csv
-    import spacy
-    spacy_en = spacy.load('en')
+def json2csv(json_fname, csv_fname, args):
+    with open(json_fname) as f:
+        data = json.load(f)
+    csv_data = []
+    for line in data:
+        sentence = line['sentence']
+        sentence = ' '.join(sentence.split()[:args.sent_max_len])
+        if args.lower: sentence = sentence.lower()
 
-    def tokenizer(text):  # create a tokenizer function
-        if text is None: return text
-        text = ' '.join(text.split()).lower()
-        toks = [tok.text for tok in spacy_en.tokenizer(text)]
-        return ' '.join(toks)
-
-    backup = file + '.untok'
-    if not os.path.isfile(backup):
-        shell('cp {} {}'.format(file, backup))
-
-    with open(backup) as f:
-        reader = csv.DictReader(f)
-        rows = [row for row in reader]
-
-    rows_tok = [{k: tokenizer(v) if k in ['comment_text'] else v
-                 for k, v in row.items()}
-                for row in rows]
-    import pdb;
-    pdb.set_trace()
-
-    with open(file, 'w') as f:
-        writer = csv.DictWriter(f, fieldnames=rows_tok[0].keys())
+        csv_line = {
+            'tgt': line['label'],
+            'input': sentence,
+            'show_inp': sentence,
+            'ent1': line['ent1'],
+            'ent2': line['ent2'],
+            'id': line['id'],
+        }
+        csv_data += [csv_line]
+    with open(csv_fname, 'w') as f:
+        writer = csv.DictWriter(f, fieldnames=csv_line.keys())
         writer.writeheader()
-        writer.writerows(rows_tok)
-    return rows_tok
+        writer.writerows(csv_data)
+    print('[Info] Writing {} data to {}'.format(len(csv_data), csv_fname))
+
+
+def get_args():
+    parser = configargparse.ArgumentParser(
+        description='Options for preprocessing')
+    parser.add_argument('-lower', action='store_false', default=True,
+                        help='whether to keep the uppercase')
+    parser.add_argument('-sent_max_len', default=100, type=int,
+                        help='the maximum number of words allowed in a sentence')
+    parser.add_argument('-tokenize', action='store_false', default=True,
+                        help='whether to tokenize the sentences')
+    parser.add_argument('-data_dir', default='data/re_semeval/', type=str,
+                        help='path to load data from')
+    args = parser.parse_args()
+    return args
 
 
 def main():
+    args = get_args()
+    data_dir = args.data_dir
 
-    file_templ = 'data/{}.csv'
-    # for typ in 'train valid test'.split():
-    for typ in 'test'.split():
-        file = file_templ.format(typ)
-        preproc(file)
+    for typ in 'train valid test'.split():
+        json_fname = os.path.join(data_dir, '{}.json'.format(typ))
+        csv_fname = os.path.join(data_dir, '{}.csv'.format(typ))
+
+        json2csv(json_fname, csv_fname, args)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

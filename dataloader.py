@@ -20,8 +20,9 @@ class Dataset:
                       lower=lower,
                       # include_lengths=True,
                       )
-        TGT = Field(sequential=False, dtype=torch.long, batch_first=True,
-                    use_vocab=False)
+        # TGT = Field(sequential=False, dtype=torch.long, batch_first=True,
+        #             use_vocab=False)
+        TGT = Field(sequential=True, batch_first=True)
         SHOW_INP = RawField()
         fields = [
             ('tgt', TGT),
@@ -45,24 +46,28 @@ class Dataset:
                           unk_init=torch.Tensor.normal_, )
         # emb_dim = {50, 100}
         # "glove.6B.{}d".format(emb_dim)
+        TGT.build_vocab(train_ds, valid_ds, test_ds)
 
         self.INPUT = INPUT
+        self.TGT = TGT
         self.train_ds = train_ds
         self.valid_ds = valid_ds
         self.test_ds = test_ds
 
         if save_vocab_fname and self.verbose:
             writeout = {
+                'tgt_vocab': {
+                    'itos': TGT.vocab.itos, 'stoi': TGT.vocab.stoi,
+                },
                 'input_vocab': {
-                    'itos': INPUT.vocab.itos,
-                    'stoi': INPUT.vocab.stoi,
+                    'itos': INPUT.vocab.itos, 'stoi': INPUT.vocab.stoi,
                 },
             }
             fwrite(json.dumps(writeout, indent=4), save_vocab_fname)
 
         if self.verbose:
-            msg = "[Info] Finished building vocab: {} INPUT" \
-                .format(len(self.INPUT.vocab))
+            msg = "[Info] Finished building vocab: {} INPUT, {} TGT" \
+                .format(len(INPUT.vocab), len(TGT.vocab))
             show_time(msg)
 
     def get_dataloader(self, proc_id=0, n_gpus=1, device=torch.device('cpu'),

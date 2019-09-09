@@ -5,7 +5,7 @@ import torch
 from efficiency.log import fwrite
 from efficiency.function import shell
 
-from get_args import setup, dynamic_setup, clean_up
+from get_args import setup, dynamic_setup, model_setup, clean_up
 from dataloader import Dataset
 from model import LSTMClassifier
 from evaluate import Validator, Predictor
@@ -18,51 +18,57 @@ def clip_gradient(model, clip_value):
 
 
 def train(proc_id, n_gpus, model=None, train_dl=None, validator=None,
-          tester=None, epochs=20, lr=0.001, log_every_n_batches=100):
+          tester=None, epochs=20, lr=0.001, log_every_n_examples=1):
     opt = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
                           lr=lr, momentum=0.9)
+    opt = torch.optim.Adadelta(
+        filter(lambda p: p.requires_grad, model.parameters()), lr=1.0, rho=0.9,
+        eps=1e-6, weight_decay=1e-5)
 
     for epoch in range(epochs):
+        if epoch - validator.best_epoch > 10:
+            return
+
         model.train()
         pbar = tqdm(train_dl) if proc_id == 0 else train_dl
         total_loss = 0
+        n_correct = 0
         cnt = 0
         for batch in pbar:
             batch_size = len(batch.tgt)
 
-            if proc_id == 0 and cnt % log_every_n_batches < batch_size:
-                pbar.set_description('E{:02d}, loss:{:.4f}, lr:{}'
-                                 .format(epoch, total_loss / cnt if cnt else 0,
-                                         opt.param_groups[0]['lr']))
+            if proc_id == 0 and cnt % log_every_n_examples < batch_size:
+                pbar.set_description('E{:02d}, loss:{:.4f}, acc:{:.4f}, lr:{}'
+                                     .format(epoch,
+                                             total_loss / cnt if cnt else 0,
+                                             n_correct / cnt if cnt else 0,
+                                             opt.param_groups[0]['lr']))
                 pbar.refresh()
 
-            loss = model.loss(batch.input, batch.tgt)
+            loss, acc = model.loss_n_acc(batch.input, batch.tgt)
             total_loss += loss.item() * batch_size
             cnt += batch_size
+            n_correct += acc
 
             opt.zero_grad()
             loss.backward()
-            clip_gradient(model, 1e-1)
+            clip_gradient(model, 1)
             opt.step()
-
-
-        print('[Info] Avg loss')
 
         if n_gpus > 1: torch.distributed.barrier()
 
         model.eval()
         validator.evaluate(model, epoch)
-        tester.evaluate(model, epoch)
+        # tester.evaluate(model, epoch)
         if proc_id == 0:
             validator.write_summary(epoch)
-            tester.write_summary(epoch)
+            # tester.write_summary(epoch)
 
 
-def bookkeep(model, validator, tester, args, INPUT_field):
-    tester.final_evaluate(model)
+def bookkeep(predictor, validator, tester, args, INPUT_field):
+    tester.final_evaluate(predictor.model)
 
-    predictor = Predictor()
-    predictor.pred_sent(INPUT_field, model)
+    predictor.pred_sent(INPUT_field)
 
     save_model_fname = validator.save_model_fname + '.e{:02d}.loss{:.4f}.torch'.format(
         validator.best_epoch, validator.best_error)
@@ -93,29 +99,47 @@ def run(proc_id, n_gpus, devices, args):
         dataset.get_dataloader(proc_id=proc_id, n_gpus=n_gpus, device=device,
                                batch_size=args.batch_size)
 
-
-    model = LSTMClassifier(emb_vectors=dataset.INPUT.vocab.vectors,
-                           lstm_dim=args.lstm_dim,
-                           lstm_n_layer=args.lstm_n_layer,
-                           lstm_dropout=args.lstm_dropout,
-                           n_linear=args.n_linear, n_classes=args.n_classes)
-    model = model.to(device)
-    args = dynamic_setup(proc_id, args, dataset, model)
-
+    args = dynamic_setup(args, dataset)
 
     validator = Validator(dataloader=valid_dl, save_dir=args.save_dir,
                           save_log_fname=args.save_log_fname,
                           save_model_fname=args.save_model_fname,
                           valid_or_test='valid',
-                          vocab_itos=dataset.INPUT.vocab.itos)
+                          vocab_itos=dataset.INPUT.vocab.itos,
+                          label_itos=dataset.TGT.vocab.itos)
     tester = Validator(dataloader=test_dl, save_log_fname=args.save_log_fname,
                        save_dir=args.save_dir, valid_or_test='test',
-                       vocab_itos=dataset.INPUT.vocab.itos)
+                       vocab_itos=dataset.INPUT.vocab.itos,
+                       label_itos=dataset.TGT.vocab.itos)
+    predictor = Predictor(args.save_vocab_fname)
+
+    if args.load_model:
+        predictor.use_pretrained_model(args.load_model, device=device)
+        import pdb;
+        pdb.set_trace()
+
+        predictor.pred_sent(dataset.INPUT)
+        tester.final_evaluate(predictor.model)
+
+        return
+
+    model = LSTMClassifier(emb_vectors=dataset.INPUT.vocab.vectors,
+                           emb_dropout=args.emb_dropout,
+                           lstm_dim=args.lstm_dim,
+                           lstm_n_layer=args.lstm_n_layer,
+                           lstm_dropout=args.lstm_dropout,
+                           lstm_combine=args.lstm_combine,
+                           linear_dropout=args.linear_dropout,
+                           n_linear=args.n_linear, n_classes=args.n_classes)
+    model = model.to(device)
+    args = model_setup(proc_id, model, args)
 
     train(proc_id, n_gpus, model=model, train_dl=train_dl,
           validator=validator, tester=tester, epochs=args.epochs, lr=args.lr)
 
-    if proc_id == 0: bookkeep(model, validator, tester, args, dataset.INPUT)
+    if proc_id == 0:
+        predictor.use_pretrained_model(args.save_model_fname, device=device)
+        bookkeep(predictor, validator, tester, args, dataset.INPUT)
 
 
 def main():

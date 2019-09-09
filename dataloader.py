@@ -17,7 +17,7 @@ class Dataset:
         tokenize = lambda x: x.split() if preprocessed else 'spacy'
 
         INPUT = Field(sequential=True, batch_first=True, tokenize=tokenize,
-                      lower=lower,
+                      # lower=lower,
                       # include_lengths=True,
                       )
         # TGT = Field(sequential=False, dtype=torch.long, batch_first=True,
@@ -32,7 +32,7 @@ class Dataset:
         if self.verbose:
             show_time("[Info] Start building TabularDataset from: {}{}"
                       .format(data_dir, 'train.csv'))
-        train_ds, valid_ds, test_ds = TabularDataset.splits(
+        datasets = TabularDataset.splits(
             fields=fields,
             path=data_dir,
             format=train_fname.rsplit('.')[-1],
@@ -41,18 +41,17 @@ class Dataset:
             test=train_fname.replace('train', 'test'),
             skip_header=True,
         )
-        INPUT.build_vocab(train_ds, max_size=vocab_max_size,
+        INPUT.build_vocab(*datasets, max_size=vocab_max_size,
                           vectors=GloVe(name='6B', dim=emb_dim),
                           unk_init=torch.Tensor.normal_, )
+        # load_vocab(hard_dosk) like opennmt
         # emb_dim = {50, 100}
-        # "glove.6B.{}d".format(emb_dim)
-        TGT.build_vocab(train_ds, valid_ds, test_ds)
+        # Elmo
+        TGT.build_vocab(*datasets)
 
         self.INPUT = INPUT
         self.TGT = TGT
-        self.train_ds = train_ds
-        self.valid_ds = valid_ds
-        self.test_ds = test_ds
+        self.train_ds, self.valid_ds, self.test_ds = datasets
 
         if save_vocab_fname and self.verbose:
             writeout = {
@@ -129,4 +128,7 @@ if __name__ == '__main__':
     for epoch in range(10):
         for batch in tqdm(train_dl):
             pass
+            # inpect padding num distribution
+            # use `pack_padded_sequence`
     show_time('[Info] Finished loading')
+

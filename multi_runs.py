@@ -5,16 +5,17 @@ from utils import show_time
 
 
 def get_combinations():
-    emb_dropouts = [0.1, 0.3, 0.5]
-    lstm_n_layers = [1, 2, 3]
-    lstm_dropouts = [0.1, 0.3, 0.5]
+    emb_dropouts = [0.3, 0.5]
+    lstm_n_layers = [1, 2]
+    lstm_dropouts = [0.1, 0.2, 0.3]
     lstm_dims = [128, 256, 512, 1024]
     # lstm_combines = ['add', 'concat']
-    n_linears = [1, 2, 3]
-    linear_dropouts = [0.1, 0.3, 0.5, 0.7]
+    linear_dropouts = [0.3, 0.5]
+    wds = [0, 1e-6, 1e-5]
+    # wd
 
-    choices = [emb_dropouts, lstm_n_layers, lstm_dropouts, lstm_dims, n_linears,
-               linear_dropouts]
+    choices = [emb_dropouts, lstm_n_layers, lstm_dropouts, lstm_dims,
+               linear_dropouts, wds]
     combinations = list(product(*choices))
     return combinations
 
@@ -69,8 +70,8 @@ def main():
               '-lstm_n_layer {} ' \
               '-lstm_dropout {} ' \
               '-lstm_dim {} ' \
-              '-n_linear {} ' \
               '-linear_dropout {} ' \
+              '-weight_decay {} ' \
             .format(save_dir=uid, *parameter_set)
         os.system(cmd)
 

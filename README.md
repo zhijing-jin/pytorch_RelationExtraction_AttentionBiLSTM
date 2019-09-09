@@ -1,6 +1,6 @@
 This is a framework for text classification by deep learning.
 
-
+This branch is for tuning on Relation Extraction Attention-Based BiLSTM.
 ### Datasets
 - Relation Extraction - Att-BiLSTM
 
@@ -33,6 +33,5 @@ python train.py
 ```
 - Get some feeling of how the loss decreases
 - 20190909 run: 71.2% on semeval
-
 
 

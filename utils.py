@@ -2,6 +2,7 @@ from __future__ import division, print_function, unicode_literals
 
 import sys
 import os.path
+from torch import nn
 
 
 def fwrite(new_doc, path, mode='w', no_overwrite=False):
@@ -17,11 +18,12 @@ def fwrite(new_doc, path, mode='w', no_overwrite=False):
     with open(path, mode) as f:
         f.write(new_doc)
 
+
 def show_time(what_happens='', cat_server=False, printout=True):
     import datetime
 
     disp = '⏰ Time: ' + \
-        datetime.datetime.now().strftime('%m%d%H%M-%S')
+           datetime.datetime.now().strftime('%m%d%H%M-%S')
     disp = disp + '\t' + what_happens if what_happens else disp
     if printout:
         print(disp)
@@ -42,6 +44,7 @@ def show_time(what_happens='', cat_server=False, printout=True):
             hostname = hostname[0]
         curr_time += hostname
     return curr_time
+
 
 def show_var(expression,
              joiner='\n', print=print):
@@ -98,7 +101,29 @@ def shell(cmd, working_directory='.', stdout=False, stderr=False):
         print("[stderr]", subp_stderr, "[end]")
 
     return subp_stdout, subp_stderr
+def set_seed(seed=0):
 
+    import random
+
+    if seed is None:
+        from efficiency.log import show_time
+        seed = int(show_time())
+    print("[Info] seed set to: {}".format(seed))
+
+    random.seed(seed)
+    try:
+        import numpy as np
+        np.random.seed(seed)
+    except ImportError:
+        pass
+
+    try:
+        import torch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+    except ImportError:
+        pass
 
 class NLP:
     def __init__(self):
@@ -126,3 +151,13 @@ class NLP:
         refs = [ref.split() for ref in ref_list]
         hyp = hyp.split()
         return bleu(refs, hyp, smoothing_function=smoothie)
+
+
+def init_weights(m):
+    if type(m) == nn.Linear:
+        nn.init.xavier_uniform_(m.weight)
+        m.bias.data.fill_(0.01)
+    elif type(m) == nn.LSTM:
+        for name, param in m.named_parameters():
+            if len(param.shape) > 1:
+                nn.init.xavier_uniform_(param)

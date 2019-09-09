@@ -2,9 +2,9 @@ from __future__ import division, print_function
 from tqdm import tqdm
 import torch
 
-from utils import shell
+from utils import shell, init_weights, set_seed
 
-from get_args import setup, dynamic_setup, model_setup, clean_up
+from get_args import setup, model_setup, clean_up
 from dataloader import Dataset
 from model import LSTMClassifier
 from evaluate import Validator, Predictor
@@ -17,12 +17,13 @@ def clip_gradient(model, clip_value):
 
 
 def train(proc_id, n_gpus, model=None, train_dl=None, validator=None,
-          tester=None, epochs=20, lr=0.001, log_every_n_examples=1):
-    opt = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
-                          lr=lr, momentum=0.9)
+          tester=None, epochs=20, lr=0.001, log_every_n_examples=1,
+          weight_decay=0):
+    # opt = torch.optim.SGD(filter(lambda p: p.requires_grad, model.parameters()),
+    #                       lr=lr, momentum=0.9)
     opt = torch.optim.Adadelta(
         filter(lambda p: p.requires_grad, model.parameters()), lr=1.0, rho=0.9,
-        eps=1e-6, weight_decay=1e-5)
+        eps=1e-6, weight_decay=weight_decay)
 
     for epoch in range(epochs):
         if epoch - validator.best_epoch > 10:
@@ -60,7 +61,14 @@ def train(proc_id, n_gpus, model=None, train_dl=None, validator=None,
         validator.evaluate(model, epoch)
         # tester.evaluate(model, epoch)
         if proc_id == 0:
-            validator.write_summary(epoch)
+            summ = {
+                'Eval': '(e{:02d},train)'.format(epoch),
+                'loss': total_loss / cnt,
+                'acc': n_correct / cnt,
+            }
+            validator.write_summary(summ=summ)
+            validator.write_summary(epoch=epoch)
+
             # tester.write_summary(epoch)
 
 
@@ -70,7 +78,7 @@ def bookkeep(predictor, validator, tester, args, INPUT_field):
     predictor.pred_sent(INPUT_field)
 
     save_model_fname = validator.save_model_fname + '.e{:02d}.loss{:.4f}.torch'.format(
-        validator.best_epoch, validator.best_error)
+        validator.best_epoch, validator.best_loss)
     cmd = 'cp {} {}'.format(validator.save_model_fname, save_model_fname)
     shell(cmd)
 
@@ -78,7 +86,9 @@ def bookkeep(predictor, validator, tester, args, INPUT_field):
 
 
 def run(proc_id, n_gpus, devices, args):
+    set_seed(args.seed)
     dev_id = devices[proc_id]
+
     if n_gpus > 1:
         dist_init_method = 'tcp://{master_ip}:{master_port}'.format(
             master_ip='127.0.0.1', master_port=args.tcp_port)
@@ -97,8 +107,6 @@ def run(proc_id, n_gpus, devices, args):
     train_dl, valid_dl, test_dl = \
         dataset.get_dataloader(proc_id=proc_id, n_gpus=n_gpus, device=device,
                                batch_size=args.batch_size)
-
-    args = dynamic_setup(args, dataset)
 
     validator = Validator(dataloader=valid_dl, save_dir=args.save_dir,
                           save_log_fname=args.save_log_fname,
@@ -129,12 +137,15 @@ def run(proc_id, n_gpus, devices, args):
                            lstm_dropout=args.lstm_dropout,
                            lstm_combine=args.lstm_combine,
                            linear_dropout=args.linear_dropout,
-                           n_linear=args.n_linear, n_classes=args.n_classes)
+                           n_linear=args.n_linear,
+                           n_classes=len(dataset.TGT.vocab))
+    if args.init_xavier: model.apply(init_weights)
     model = model.to(device)
     args = model_setup(proc_id, model, args)
 
     train(proc_id, n_gpus, model=model, train_dl=train_dl,
-          validator=validator, tester=tester, epochs=args.epochs, lr=args.lr)
+          validator=validator, tester=tester, epochs=args.epochs, lr=args.lr,
+          weight_decay=args.weight_decay)
 
     if proc_id == 0:
         predictor.use_pretrained_model(args.save_model_fname, device=device)

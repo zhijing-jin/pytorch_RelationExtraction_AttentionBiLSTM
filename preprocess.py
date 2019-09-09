@@ -32,7 +32,7 @@ def json2csv(json_fname, csv_fname, args):
 def get_args():
     parser = configargparse.ArgumentParser(
         description='Options for preprocessing')
-    parser.add_argument('-lower', action='store_false', default=True,
+    parser.add_argument('-lower', action='store_true', default=False,
                         help='whether to keep the uppercase')
     parser.add_argument('-sent_max_len', default=100, type=int,
                         help='the maximum number of words allowed in a sentence')

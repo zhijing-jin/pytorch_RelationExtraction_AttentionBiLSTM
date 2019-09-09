@@ -1,8 +1,6 @@
 import os
 import sys
 import json
-import torch
-import numpy as np
 import random
 import configargparse
 from utils import show_time, fwrite, shell
@@ -13,6 +11,8 @@ def get_args():
     parser = configargparse.ArgumentParser(
         description='Args for Text Classification')
     group = parser.add_argument_group('Model Hyperparameters')
+    group.add_argument('-init_xavier', default=False, action='store_true',
+                       help='whether to use xavier normal as initiator for model weights')
     group.add_argument('-emb_dropout', default=0.3, type=float,
                        help='dropout of the embedding layer')
     group.add_argument('-emb_dim', default=100, type=int,
@@ -41,7 +41,8 @@ def get_args():
     group.add_argument('-epochs', default=100, type=int,
                        help='number of epochs to train the model')
     group.add_argument('-lr', default=0.001, type=float, help='learning rate')
-    group.add_argument('-decay', default=0.001, type=float, help='weight decay')
+    group.add_argument('-weight_decay', default=0.001, type=float,
+                       help='weight decay')
 
     group = parser.add_argument_group('Files')
     group.add_argument('-data_dir', default='data/re_semeval/', type=str,
@@ -53,7 +54,7 @@ def get_args():
                        help='# samples to use in train/dev/test files')
     group.add_argument('-preprocessed', action='store_false', default=True,
                        help='whether input data is preprocessed by spacy')
-    group.add_argument('-lower', action='store_false', default=True,
+    group.add_argument('-lower', action='store_true', default=False,
                        help='whether to lowercase the input data')
 
     group.add_argument('-uid', default=cur_time, type=str,
@@ -110,18 +111,6 @@ def setup():
     return args
 
 
-def dynamic_setup(args, dataset):
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
-    random.seed(args.seed)
-    torch.cuda.manual_seed_all(args.seed)
-
-    vocab = dataset.INPUT.vocab
-    args.vocab_size = len(vocab)
-    args.n_classes = len(dataset.TGT.vocab)
-    return args
-
-
 def model_setup(proc_id, model, args):
     def _count_parameters(model):
         return sum(
@@ -167,18 +156,17 @@ def select_data(save_dir='./tmp', data_dir='./data/wiki_person',
                                  train_fname.replace('train', file))
         save_to = os.path.join(save_dir, file + suffix)
 
+        with open(read_from) as f:
+            data = [line for line in f]
         if skip_header:
-            shell('head -1 {fin} > {fout}'.format(fin=read_from, fout=save_to))
-
-        if data_size is None:
-            cmd = "awk 'NR>=2' {fin} | shuf >> {fout}" \
-                .format(fin=read_from, fout=save_to)
+            header, body = data[:1], data[1:]
         else:
-            cmd = "awk 'NR>=2&&NR<={line_num}' {fin} | shuf | head -{data_size} >> {fout}" \
-                .format(line_num=1 + data_size, data_size=data_size,
-                        fin=read_from, fout=save_to)
+            header, body = [], data
+        random.shuffle(body)
+        data = header + body[:data_size]
 
-        shell(cmd)
+        fwrite(''.join(data), save_to)
+
         n_lines[file] = _get_num_lines(save_to)
 
     if verbose:

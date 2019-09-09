@@ -21,8 +21,8 @@ class LSTMClassifier(nn.Module):
         self.lstm_combine = lstm_combine
 
         self.embedding_layer = nn.Embedding(*emb_vectors.shape)
-        self.embedding_layer.from_pretrained(emb_vectors,
-                                             padding_idx=1)  # pad=1 in torchtext
+        self.embedding_layer.from_pretrained(emb_vectors, padding_idx=1)
+        # pad=1 in torchtext; embedding weights trainable
         self.embedding_dropout = nn.Dropout(p=emb_dropout)
 
         self.lstm = nn.LSTM(emb_dim, lstm_dir_dim,
@@ -117,14 +117,14 @@ class LSTMClassifier(nn.Module):
 
         lstm_output, (final_h, final_c) = self.lstm(inp)
 
-        outputs = []
-        for i in range(batch_size):
-            cur_emb = inp[i:i + 1]  # .view(1, inp.size(1), inp.size(2))
-
-            o, hidden = self.lstm(cur_emb) if i == 0 else self.lstm(cur_emb, hidden)
-            import pdb;pdb.set_trace()
-            outputs += [o.unsqueeze(0)]
-        outputs = torch.cat(outputs, dim=0)
+        # outputs = []
+        # for i in range(seq_len):
+        #     cur_emb = inp[i:i + 1]  # .view(1, inp.size(1), inp.size(2))
+        #
+        #     o, hidden = self.lstm(cur_emb) if i == 0 else self.lstm(cur_emb, hidden)
+        #     import pdb;pdb.set_trace()
+        #     outputs += [o.unsqueeze(0)]
+        # outputs = torch.cat(outputs, dim=0)
 
         lstm_output = self.lstm_dropout(lstm_output)
 
@@ -138,7 +138,6 @@ class LSTMClassifier(nn.Module):
 
         logits = self.label(output)
         return logits
-
 
     def forward_normal_attention(self):
         batch_size = len(input)
@@ -166,7 +165,6 @@ class LSTMClassifier(nn.Module):
         logits = self.label(output)
         return logits
 
-
     def forward_normal_lstm(self):
         inp = self.embedding_layer(input)
         inp = self.embedding_dropout(inp)
@@ -184,7 +182,6 @@ class LSTMClassifier(nn.Module):
         logits = self.label(output)
         return logits
 
-
     def loss(self, input, target):
         logits = self.forward(input)
         logits_flat = logits.view(-1, logits.size(-1))
@@ -192,14 +189,12 @@ class LSTMClassifier(nn.Module):
         loss = self.crit(logits_flat, target_flat)  # mean_score per batch
         return loss
 
-
     def predict(self, input):
         logits = self.forward(input)
         logits[:, :2] = float('-inf')
         preds = logits.max(dim=-1)[1]
         preds = preds.detach().cpu().numpy().tolist()
         return preds
-
 
     def loss_n_acc(self, input, target):
         logits = self.forward(input)

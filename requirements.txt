@@ -1,4 +1,4 @@
 configargparse
 torchtext
-torch==1.1
+torch==2.2.0
 
